@@ -7,17 +7,19 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 import nltk
+from pathlib import Path
 from nltk.corpus import stopwords
 import warnings
 warnings.filterwarnings('ignore')
 
+PROJECT_DIR = Path(__file__).resolve().parent
 
 
 # -----------------------------
 # 1. Load the Dataset
 # -----------------------------
 # Replace 'your_dataset.csv' with your actual file name
-df = pd.read_csv("synthetic_it_support_tickets.csv")
+df = pd.read_csv(PROJECT_DIR / "synthetic_it_support_tickets.csv")
 
 print("Dataset Loaded Successfully!")
 print("Shape of dataset:", df.shape)
@@ -53,7 +55,7 @@ print(df.shape)
 print(df.head())
 
 # Optional: Save cleaned version
-df.to_csv("cleaned_ticket_data.csv", index=False)
+df.to_csv(PROJECT_DIR / "cleaned_ticket_data.csv", index=False)
 print("\nCleaned dataset saved as 'cleaned_ticket_data.csv'")
 
 # ==============================================
@@ -113,7 +115,7 @@ plt.xlabel("Text Length")
 plt.show()
 
 # 6. Categorical Features Analysis
-categorical_cols = ['customer_tier', 'channel', 'product_area', 'platform', 'region', 'customer_sentiment']
+categorical_cols = ['customer_segment', 'channel', 'product_area', 'platform', 'region', 'customer_sentiment']
 
 for col in categorical_cols:
     print(f"\n{col} Distribution:")
@@ -127,7 +129,7 @@ for col in categorical_cols:
 
 # 7. Check relationship between Priority and some features (Optional)
 plt.figure(figsize=(8,4))
-sns.countplot(x='priority', hue='customer_tier', data=df)
+sns.countplot(x='priority', hue='customer_segment', data=df)
 plt.title("Priority vs Customer Tier")
 plt.show()
 

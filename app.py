@@ -3,11 +3,16 @@ import re
 from pathlib import Path
 
 import joblib
+import importlib
 import nltk
 import pandas as pd
-import streamlit as st
-from nltk.corpus import stopwords
-from scipy.sparse import csr_matrix, hstack
+import streamlit as st  # type: ignore[import-not-found]
+scipy_sparse = importlib.import_module("scipy.sparse")
+csr_matrix = scipy_sparse.csr_matrix
+hstack = scipy_sparse.hstack
+
+nltk.download("stopwords", quiet=True)
+stopwords = importlib.import_module("nltk.corpus").stopwords
 
 
 st.set_page_config(page_title="Ticket Lens", page_icon="TL", layout="wide")
@@ -26,8 +31,8 @@ def load_models():
         joblib.load(PROJECT_DIR / "best_priority_model.pkl"),
         joblib.load(PROJECT_DIR / "tfidf_vectorizer.pkl"),
         joblib.load(PROJECT_DIR / "onehot_encoder.pkl"),
+        joblib.load(PROJECT_DIR / "num_scaler.pkl"),
     )
-
 
 @st.cache_resource
 def load_stop_words():
@@ -59,7 +64,7 @@ def model_signal(model, features):
 def predict_ticket(initial_message, customer_tier, channel, product_area,
                    platform="web", region="NA", customer_sentiment="neutral",
                    has_attachment=0):
-    issue_model, priority_model, tfidf, onehot = load_models()
+    issue_model, priority_model, tfidf, onehot, num_scaler = load_models()
     cleaned_message = clean_text(initial_message)
     category_values = pd.DataFrame({
         "customer_segment": [str(customer_tier).lower()],
@@ -69,24 +74,23 @@ def predict_ticket(initial_message, customer_tier, channel, product_area,
         "region": [str(region).upper()],
         "customer_sentiment": [str(customer_sentiment).lower()],
     })
-    numeric_values = csr_matrix([[
+    raw_numeric = [[
         int(has_attachment),
         len(cleaned_message),
         len(cleaned_message.split()),
         sum(keyword in cleaned_message for keyword in URGENCY_KEYWORDS),
-    ]])
+    ]]
+    numeric_values = csr_matrix(num_scaler.transform(raw_numeric))
     features = hstack([
         tfidf.transform([cleaned_message]),
         onehot.transform(category_values),
         numeric_values,
     ])
-    return (
-        issue_model.predict(features)[0],
-        priority_model.predict(features)[0],
-        model_signal(issue_model, features),
-        model_signal(priority_model, features),
-    )
-
+    issue_type = issue_model.predict(features)[0]
+    priority = priority_model.predict(features)[0]
+    issue_signal = model_signal(issue_model, features)
+    priority_signal = model_signal(priority_model, features)
+    return issue_type, priority, issue_signal, priority_signal
 
 def title_case(value):
     return str(value).replace("_", " ").title()

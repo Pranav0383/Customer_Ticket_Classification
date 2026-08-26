@@ -19,6 +19,7 @@ issue_model = joblib.load(project_dir / "best_issue_type_model.pkl")
 priority_model = joblib.load(project_dir / "best_priority_model.pkl")
 tfidf = joblib.load(project_dir / "tfidf_vectorizer.pkl")
 onehot = joblib.load(project_dir / "onehot_encoder.pkl")
+num_scaler = joblib.load(project_dir / "num_scaler.pkl")  # NEW: must match training-time scaling
 
 print("All models loaded successfully!")
 
@@ -29,8 +30,8 @@ def clean_text(text):
     if pd.isna(text) or text is None:
         return ""
     text = str(text).lower()
-    text = re.sub(r'[^a-z\s]', ' ', text)      # remove special characters & numbers
-    text = re.sub(r'\s+', ' ', text).strip()   # remove extra spaces
+    text = re.sub(r'[^a-z\s]', ' ', text)
+    text = re.sub(r'\s+', ' ', text).strip()
     words = [w for w in text.split() if w not in stop_words]
     return " ".join(words)
 
@@ -55,16 +56,15 @@ def predict_ticket(
 ):
     """
     Predict issue_type and priority for a new support ticket.
+    NOTE: `customer_tier` here is passed straight through to the
+    'customer_segment' column the encoder expects -- keep the values as
+    one of individual/small_business/enterprise/education/non_profit.
     """
 
-    # Clean the message
     cleaned_message = clean_text(initial_message)
 
-    # TF-IDF transform
     tfidf_features = tfidf.transform([cleaned_message])
 
-    # Prepare categorical features for OneHotEncoder
-    # IMPORTANT: Column order must match what you used during training
     cat_df = pd.DataFrame({
         'customer_segment': [str(customer_tier).lower()],
         'channel': [str(channel).lower()],
@@ -73,22 +73,21 @@ def predict_ticket(
         'region': [str(region).upper()],
         'customer_sentiment': [str(customer_sentiment).lower()]
     })
-
-    # One-Hot Encode
     cat_features = onehot.transform(cat_df)
 
-    # Add numerical features in the same order as the training pipeline.
-    numerical_features = csr_matrix([[
+    raw_numeric = np.array([[
         has_attachment,
         len(cleaned_message),
         len(cleaned_message.split()),
         sum(1 for keyword in urgency_keywords if keyword in cleaned_message)
-    ]])
+    ]], dtype=float)
+    # scale with the SAME scaler fit during training -- this was missing
+    # before and is required now that 02_preprocessing scales numeric features
+    scaled_numeric = num_scaler.transform(raw_numeric)
+    numerical_features = csr_matrix(scaled_numeric)
 
-    # Combine features in the same order as training.
     X_new = hstack([tfidf_features, cat_features, numerical_features])
 
-    # Make predictions
     issue_pred = issue_model.predict(X_new)[0]
     priority_pred = priority_model.predict(X_new)[0]
 
@@ -103,9 +102,9 @@ def predict_ticket(
 if __name__ == "__main__":
     result = predict_ticket(
         initial_message="My payment failed and I cannot login to the dashboard. This is urgent!",
-        customer_tier="Premium",
-        channel="Email",
-        product_area="Billing"
+        customer_tier="enterprise",
+        channel="email",
+        product_area="billing"
     )
 
     print("\n--- Sample Prediction ---")
